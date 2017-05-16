@@ -1,0 +1,16 @@
+#!/bin/bash
+
+src="$(basename $0).c"
+executable="$(basename $0)"
+
+gcc -std=c11 -ggdb $src -o $executable
+mv $executable /tmp/object-files/       # test for signal interrupts
+
+args=""
+
+for arg in $@
+do
+    args="$args $arg"
+done
+
+/tmp/object-files/${executable} $args
