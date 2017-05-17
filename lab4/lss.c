@@ -16,30 +16,14 @@
 #define MAX_DIRS 128
 
 typedef struct Entry{
-    char * path;
-    char * file;
-    int size;
+    char * path;    // absolute path
+    char * file;    // file name
+    int size;       // file size
 } Entry;
 
-double convert(long bytes) {
-    if (bytes >= 1000 && bytes < 10000){
-        double subresult = (double) bytes / 100;
-        return floorf(subresult) / 10;
-    }
-    return 0;
-}
-
-int blocks(off_t bytes) {
-    int blk_size = 4096;
-    if (bytes <= blk_size)
-        return 4;
-    else if (bytes % blk_size == 0)
-        return (bytes / blk_size) * 4;
-    else
-        return ((bytes / blk_size + 1) * 4);
-}
 
 char * format_time(const time_t * timep) {
+    /* Prints the most recent modification time of a file in military time. */
     struct tm * time = localtime(timep);
     char * result = (char *) malloc(sizeof(char) * 128);
 
@@ -48,16 +32,22 @@ char * format_time(const time_t * timep) {
     return result;
 }
 void print_info(char * path, char * file, int padding) {
+    /* Prints the file permissions, size, time stamp, and file name. */
     struct stat info;
     stat(path, &info);
 
     
-    if (S_ISDIR(info.st_mode))
-        printf("d");
-    else if (S_ISLNK(info.st_mode))
-        printf("l");
-    else
-        printf("-");
+    switch(info.st_mode & S_IFMT) {
+        case S_IFDIR:
+            printf("d");
+            break;
+        case S_IFLNK:
+            printf("l");
+            break;
+        default:
+            printf("-");
+            break;
+    }
     printf((info.st_mode & S_IRUSR) ? "r" : "-");
     printf((info.st_mode & S_IWUSR) ? "w" : "-");
     printf((info.st_mode & S_IXUSR) ? "x" : "-");
@@ -87,6 +77,7 @@ void print_info(char * path, char * file, int padding) {
 }
 
 int comparator(const void * lhs, const void * rhs) {
+    /* Used to sort Entry objects by size, resolving ties by lexicographic order. */
     Entry * _lhs = (Entry *) lhs;
     Entry * _rhs = (Entry *) rhs;
 
@@ -99,6 +90,7 @@ int comparator(const void * lhs, const void * rhs) {
 }
 
 int places(int num) {
+    /* Counts the number of places of an integer */
     int count = 1;
 
     while (num > 10) {
@@ -108,8 +100,8 @@ int places(int num) {
     return count;
 }
 
-void dfs(char * path) {
-
+void lss(char * path) {
+    /* Reads files in the current directory */
     int file_count = 0;
     DIR * dirp = opendir(path);
 
@@ -125,26 +117,20 @@ void dfs(char * path) {
     dirp = opendir(path);
     for (int i = 0; i < file_count; ++i) {
         struct dirent * dp = readdir(dirp);
-        if (dp == NULL)
+        if (dp == NULL)     // no more files to be read in the directory
             break;
        
-        char * absolute_path = NULL;
-
-        absolute_path = malloc(sizeof(char) * (strlen(path) + strlen(dp->d_name)));
+        char * absolute_path = malloc(sizeof(char) * (strlen(path) + strlen(dp->d_name)));
         sprintf(absolute_path, "%s/%s", path, dp->d_name);
 
         struct stat info;
         stat(absolute_path, &info);
 
-        if (S_ISLNK(info.st_mode)) {
-            printf("%s is a symlink\n", dp->d_name);
-            char * link_buf = (char *) malloc(sizeof(char) * info.st_size);
-            if (readlink(absolute_path, link_buf, info.st_size) == 0) {
-                printf("Symbolic link has no reference\n");
-                return;
-            }
-
+        if (errno == ELOOP) {   // If a symlink points to nowhere
+            perror("Error");
+            exit(ELOOP);
         }
+
         (entries[i]).path = absolute_path;
         (entries[i]).file = dp->d_name;
         (entries[i]).size = info.st_size;
@@ -152,7 +138,8 @@ void dfs(char * path) {
     }
 
     qsort(entries, file_count, sizeof(Entry), comparator);
-    int padding = places((entries[0]).size);
+    int padding = places((entries[0]).size);    // pads diplayed file sizes according
+                                                // to the largest file
     for (int i = 0; i < file_count; ++i) {
         print_info((entries[i]).path, (entries[i]).file, padding);
     }
@@ -164,6 +151,6 @@ void dfs(char * path) {
 int main(int argc, char ** args) {
     char * dir = ".";
 
-    dfs(dir);
+    lss(dir);
     return 0;
 }
