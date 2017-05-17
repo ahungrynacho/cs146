@@ -3,8 +3,21 @@
 src="$(basename $0).c"
 executable="$(basename $0)"
 
-gcc -std=c11 -ggdb $src -o $executable
-mv $executable /tmp/object-files/       # test for signal interrupts
+function cleanup {
+    eval 'directory=($(ls /tmp | grep "object-files"))'
+    if [ "$directory" != "" ]; then
+        rm -f /tmp/object-files/${executable}
+        rmdir /tmp/object-files
+    fi
+    exit 0
+}
+trap cleanup SIGINT SIGHUP SIGQUIT SIGTERM 0
+
+
+mkdir /tmp/object-files/
+gcc -std=c11 -ggdb $src -o /tmp/object-files/${executable}
+
+sleep 5
 
 args=""
 
@@ -14,3 +27,5 @@ do
 done
 
 /tmp/object-files/${executable} $args
+
+
