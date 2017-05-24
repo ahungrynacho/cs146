@@ -12,4 +12,4 @@ parse.o: parse.c parse.h
 	$(CC) $(FLAGS) -c parse.c
 
 clean:
-	rm -f *.o main
+	rm -f *.o main core.*

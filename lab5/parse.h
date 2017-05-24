@@ -6,5 +6,5 @@ typedef struct Command {
     char ** args;    
 } Command;
 
-char * parse(char * buf, int size);
+void parse(char * dest, int size, char * buf);
 #endif

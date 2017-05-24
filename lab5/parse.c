@@ -3,14 +3,15 @@
 #include <string.h>
 #include "parse.h"
 
-char * parse(char * buf, int size) {
+void parse(char * dest, int size, char * buf) {
     Command commands;
     commands.num = 0;
     commands.args = NULL;
    
     char * buf_copy = NULL;
     buf[strlen(buf) - 1] = '\0';    // replace \n with \0
-    char * result = (char *) malloc(sizeof(char) * strlen(buf) * 2);
+   
+    char result[size];
 
     if (strlen(buf) > 0) {
         buf_copy = (char *) malloc(sizeof(char) * strlen(buf));
@@ -54,18 +55,32 @@ char * parse(char * buf, int size) {
         *args = NULL;
         free(buf_copy);
         
-    }
-
-    for (char ** arg = commands.args; *arg != NULL; ++arg) {
-        if (strcmp(*arg, "<") == 0 || strcmp(*arg, ">") || strcmp(*arg, "|") == 0) {
-            // strcat result without single quotes
+        // concatentate the output to a single buffer    
+        sprintf(result, "%d:", commands.num);
+        for (char ** arg = commands.args; *arg != NULL; ++arg) {
+            char buf_cmd[strlen(*arg) * 2];
+            if (strcmp(*arg, "<") == 0 || strcmp(*arg, ">") == 0 || strcmp(*arg, "|") == 0) {
+                // strcat result without single quotes
+                sprintf(buf_cmd, " %s", *arg);
+                strcat(result, buf_cmd);
+            }
+            else {
+                // strcat result with single quotes
+                sprintf(buf_cmd, " \'%s\'", *arg);
+                strcat(result, buf_cmd);
+            }
         }
-        else {
-            // strcat result with single quotes
+        strcpy(dest, result);
+
+
+        /*        
+        // cleanup
+        for (char ** ptr = commands.args; *ptr != NULL; ++ptr) {
+            free(*ptr);
         }
-
+        free(commands.args);
+        */
+        
     }
-
-    return result;
 
 }
