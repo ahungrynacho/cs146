@@ -16,57 +16,69 @@ void exec_command(struct commandLine *cmdLine, int i)
     execvp(cmdLine->argv[cmdLine->cmdStart[i]], &(cmdLine->argv[cmdLine->cmdStart[i]]));
 }
 
-void io_redir(struct commandLine *cmdLine, int i)
+void io_infile(struct commandLine *cmdLine, int i)
 {
-    int fd[2];
-    int save_stdout = dup(STDOUT_FILENO);
-    int save_stdin = dup(STDIN_FILENO);
-    if (pipe(fd) == -1)
-        perror("pipe");
+    int in = open(cmdLine->infile, O_RDONLY, S_IRUSR | S_IWUSR);
+    dup2(in, STDIN_FILENO);
+    exec_command(cmdLine, i);
+}
 
-    switch(fork())
+void io_outfile(struct commandLine *cmdLine, int i)
+{
+  
+    int out; 
+    switch(cmdLine->append)
     {
-        case -1:
-            perror("fork");
         case 0:
-            dup2(fd[1], STDOUT_FILENO);
-            close(fd[0]);
-            close(fd[1]);
-            exec_command(cmdLine, i);
+            out = open(cmdLine->outfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR); 
+            break;
         default:
-            dup2(fd[0], STDIN_FILENO);
-            wait(NULL);
-
-            int out;
-            if (cmdLine->append)
-                out = open(cmdLine->outfile, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
-            else
-                out = open(cmdLine->outfile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR); 
-            
-            dup2(out, fd[0]);
-            close(fd[0]);
-            close(fd[1]);
-            close(out);
-
-            // restore original file descriptors
-            dup2(save_stdout, STDOUT_FILENO);
-            dup2(save_stdin, STDIN_FILENO);
-            close(save_stdout);
-            close(save_stdin);
+            out = open(cmdLine->outfile, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
             break;
     }
+    dup2(out, STDOUT_FILENO);
+    exec_command(cmdLine, i);
+}
 
-    int input;
-    if (cmdLine->append)
+void one_command(struct commandLine *cmdLine)
+{
+    if (cmdLine->outfile)
     {
-        input = open(cmdLine->infile, O_WRONLY | O_CREAT | O_APPEND, S_IRUSR | S_IWUSR);
+        switch(fork())
+        {
+            case 0:
+                io_outfile(cmdLine, 0);
+                break;
+            default:
+                wait(NULL);
+                break;
+        }
     }
+    else if (cmdLine->infile)
+        switch(fork())
+        {
+            case 0:
+                io_infile(cmdLine, 0);
+                break;
+            default:
+                wait(NULL);
+                break;
+        }
     else
     {
-        input = open(cmdLine->infile, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+        switch (fork())
+        {
+            case 0:
+                exec_command(cmdLine, 0);
+
+            default:
+                wait(NULL);
+                break;
+        }
     }
 
 }
+
 
 int main(int argc, char *argv[])
 {
@@ -107,7 +119,7 @@ int main(int argc, char *argv[])
             
         if (cmdLine.numCommands == 2)
         {
-            int pid, status;
+            int pid;
             int pfd[2];
 
             if (pipe(pfd) == -1) // create pipe
@@ -119,18 +131,17 @@ int main(int argc, char *argv[])
                     perror("fork");
 
                 case 0:     // child
-                    /*
-                    if (close(pfd[0]) == -1)    // read end is unused
-                        perror("close 1");
-                    */
                     if (dup2(pfd[1], STDOUT_FILENO) == -1)
                         perror("dup2 1");
                     if (close(pfd[0]) == -1)
                         perror("close 1");
                     if (close(pfd[1]) == -1)
                         perror("close 2");
-                    
-                    exec_command(&cmdLine, 0);      // writes to pipe
+                   
+                    if (cmdLine.infile)
+                        io_infile(&cmdLine, 0);
+                    else
+                        exec_command(&cmdLine, 0);      // writes to pipe
                     perror("execvp");
 
                 default:
@@ -145,11 +156,6 @@ int main(int argc, char *argv[])
                     perror("fork");
 
                 case 0:
-                    /*
-                    if (close(pfd[1] == -1))    // write end is unused
-                        perror("close 3");
-                    */
-
                     if (dup2(pfd[0], STDIN_FILENO) == -1)
                         perror("dup2 2");
                     if (close(pfd[1]) == -1)
@@ -157,7 +163,10 @@ int main(int argc, char *argv[])
                     if (close(pfd[0]) == -1)
                         perror("close 4");
 
-                    exec_command(&cmdLine, 1);
+                    if (cmdLine.outfile)
+                        io_outfile(&cmdLine, 1);
+                    else
+                        exec_command(&cmdLine, 1);
                     perror("execvp");
 
                 default:
@@ -169,65 +178,12 @@ int main(int argc, char *argv[])
 
             }
         }
+        else if (cmdLine.numCommands == 1 && strcmp(cmdLine.argv[0], "cd") == 0)
+            chdir(cmdLine.argv[1]);
         else
-        {
-            if (cmdLine.outfile != NULL)
-                io_redir(&cmdLine, 0);
-            else
-            {
-                switch (fork())
-                {
-                    case 0:
-                        exec_command(&cmdLine, 0);
-
-                    default:
-                        wait(NULL);
-                        break;
-                }
-            }
-        }
+            one_command(&cmdLine);
 
 
-
-
-
-        /* ------------------------------------------------------------------- */
-        /*
-        printf("%d: ", cmdLine.numCommands);
-
-        if(cmdLine.infile)
-            printf("< '%s' ", cmdLine.infile);
-
-        for(i=0; i < cmdLine.numCommands; i++)
-        {
-            int j;
-            for(j=cmdLine.cmdStart[i]; cmdLine.argv[j] != NULL; j++)
-                printf("'%s' ", cmdLine.argv[j]);
-            if(i < cmdLine.numCommands - 1)
-                printf("| ");
-        }
-
-        if(cmdLine.append)
-        {
-            // verify that if we're appending there should be an outfile!
-            assert(cmdLine.outfile);
-            printf(">");
-        }
-        if(cmdLine.outfile)
-            printf(">'%s'", cmdLine.outfile);
-
-        
-        // Print any other relevant info here, such as '&' if you implement
-        // background execution, etc.
-        
-
-        printf("\n");
-        
-        
-        printf("%d: ", cmdLine.numCommands);
-        */
-
-        /* ------------------------------------------------------------------- */
         if(input == stdin)
         {
             printf("? ");
